@@ -143,7 +143,7 @@ if __name__ == '__main__':
     tab = read_coord_file(args.coords)
 
     # Read in fits file
-    image = fits.getdata(args.image_file)
+    data = fits.getdata(args.image_file)
 
     src1_list = []
     src2_list = []
@@ -152,46 +152,86 @@ if __name__ == '__main__':
     diff_list = []
     dx_list = []
     angle_list = []
-    for i, row in enumerate(tab):
-        src1 = Source((row['x1'], row['y1']), image, horizontal=horiz, num_collapse=args.n_collapse, cross_disp_width=args.cross_disp_width)
-        coord1_src1 = src1.g.mean.value
-        src1_list.append(coord1_src1)
-        src2 = Source((row['x2'], row['y2']), image, horizontal=horiz, num_collapse=args.n_collapse, cross_disp_width=args.cross_disp_width)
-        coord1_src2 = src2.g.mean.value
-        src2_list.append(coord1_src2)
+    integ_list = []
+    comments = []
 
-        if horiz:
-            coord2_src1.append(row['x1'])
-            coord2_src2.append(row['x2'])
+    ndim = len(data.shape)
+    if ndim == 2:
+        nint = 1
+    elif ndim == 3:
+        nint = data.shape[0]
+    else:
+        raise ValueError("Unsupported input data dimensions")
+
+    for integ in range(nint):
+        integ_src1_list = []
+        integ_src2_list = []
+        integ_coord2_src1 = []
+        integ_coord2_src2 = []
+        integ_diff_list = []
+        integ_dx_list = []
+        integ_angle_list = []
+        integ_integ_list = []
+
+        if ndim == 2:
+            image = data
         else:
-            coord2_src1.append(row['y1'])
-            coord2_src2.append(row['y2'])
+            image = data[integ, :, :]
 
-        diff = coord1_src2 - coord1_src1
-        diff_list.append(diff)
-        if horiz:
-            dx = row['x2'] - row['x1']
-        else:
-            dx = row['y2'] - row['y1']
-        dx_list.append(dx)
-        angle = np.arctan2(diff, dx) * 180./np.pi
-        angle_list.append(angle)
+        for i, row in enumerate(tab):
+            src1 = Source((row['x1'], row['y1']), image, horizontal=horiz, num_collapse=args.n_collapse, cross_disp_width=args.cross_disp_width)
+            coord1_src1 = src1.g.mean.value
+            integ_src1_list.append(coord1_src1)
+            src2 = Source((row['x2'], row['y2']), image, horizontal=horiz, num_collapse=args.n_collapse, cross_disp_width=args.cross_disp_width)
+            coord1_src2 = src2.g.mean.value
+            integ_src2_list.append(coord1_src2)
 
-    median_angle = np.median(angle_list)
-    stdev_angle = np.stdev(angle_list)
-    print(f'Median and stdev of trance angles relative to rows/cols: {median_angle} +/- {stdev_angle} degrees.')
+            if horiz:
+                integ_coord2_src1.append(row['x1'])
+                integ_coord2_src2.append(row['x2'])
+            else:
+                integ_coord2_src1.append(row['y1'])
+                integ_coord2_src2.append(row['y2'])
+
+            integ_integ_list.append(integ)
+
+            diff = coord1_src2 - coord1_src1
+            integ_diff_list.append(diff)
+            if horiz:
+                dx = row['x2'] - row['x1']
+            else:
+                dx = row['y2'] - row['y1']
+            integ_dx_list.append(dx)
+            angle = np.arctan2(diff, dx) * 180./np.pi
+            integ_angle_list.append(angle)
+
+        integ_list.extend(integ_integ_list)
+        coord2_src1.extend(integ_coord2_src1)
+        src1_list.extend(integ_src1_list)
+        coord2_src2.extend(integ_coord2_src2)
+        src2_list.extend(integ_src2_list)
+        diff_list.extend(integ_diff_list)
+        dx_list.extend(integ_dx_list)
+        angle_list.extend(integ_angle_list)
+
+        median_angle = np.median(integ_angle_list)
+        stdev_angle = np.std(integ_angle_list)
+        summary_string = f'Integration {integ}: Median and stdev of trace angles relative to rows/cols: {median_angle} +/- {stdev_angle} degrees.'
+        print(summary_string)
+        comments.append(summary_string)
 
     if horiz:
-        results = Table([coord2_src1, src1_list, coord2_src2, src2_list, diff_list, dx_list, angle_list],
-                        names = ('src1_x', 'src1_y', 'src2_x', 'src2_y', 'diff', 'trace_length', 'angle'))
+        results = Table([integ_list, coord2_src1, src1_list, coord2_src2, src2_list, diff_list, dx_list, angle_list],
+                        names = ('integration', 'src1_x', 'src1_y', 'src2_x', 'src2_y', 'diff', 'trace_length', 'angle'))
     else:
-        results = Table([src1_list, coord2_src1, src2_list, coord2_src2,  diff_list, dx_list, angle_list],
-                        names = ('src1_x', 'src1_y', 'src2_x', 'src2_y', 'diff', 'trace_length', 'angle'))
+        results = Table([integ_list, src1_list, coord2_src1, src2_list, coord2_src2,  diff_list, dx_list, angle_list],
+                        names = ('integration', 'src1_x', 'src1_y', 'src2_x', 'src2_y', 'diff', 'trace_length', 'angle'))
 
+    results.meta['comments'] = comments
     base_coords = os.path.basename(args.coords)
     base_img = os.path.basename(args.image_file)
     outfile = f'trace_angles_{base_coords}_{base_img}.dat'
     ascii.write(results, outfile, overwrite=True)
-    print("Saved results to: {outfile}")
+    print(f"Saved results to: {outfile}")
 
 
